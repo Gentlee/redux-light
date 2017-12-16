@@ -9,9 +9,32 @@ describe('createStore', () => {
 
         expect(store.getState()).toEqual(initialState);
     });
+
+    it('should allow to set custom reducer', () => {
+        let initialState = { test: { counter: 0 } };
+        let reducerFn = jest.fn();
+        let reducer = (oldState, newState) => {
+            reducerFn();
+            return { ...newState };
+        };
+        
+        let store = createStore(initialState, { reducer });
+        let newState = { test1: {} };
+        store.setState('TEST_REDUCER', newState);
+
+        expect(reducerFn).toBeCalled();
+        expect(store.state).toEqual(newState);
+    });
+    
+    it('should allow to disable type', () => {
+        let initialState = { test: { counter: 0 } };
+        let store = createStore(initialState, { requireType: false });
+
+        store.setState({ test: { counter: 1 } });
+    });
 });
 
-describe('store', () => {
+describe('setState', () => {
     it('should set state', () => {
         let initialState = {
             test: {
@@ -47,7 +70,56 @@ describe('store', () => {
 
         expect(store.getState().test.counter).toEqual(80);
     });
+    
+    it('should not allow to add new root properties', () => {
+        let initialState = { test: { counter: 0 } };
+        let store = createStore(initialState);
 
+        expect(() => {
+            store.setState({
+                type: 'TEST',
+                newRoot: { counter: 0 }
+            });
+        }).toThrow();
+    });
+    
+    it('should not allow set state in a listener', () => {
+        let store = createStore({ test: { counter: 0 } });
+
+        let unsubscribe = store.subscribe(() => {
+            expect(() => {
+                store.setState({ type: 'TEST', test: { counter: 2 } });        
+            }).toThrow();
+        });
+
+        store.setState({ type: 'TEST', test: { counter: 1 } });
+    });
+    
+    it('should throw exception without type', () => {
+        let store = createStore({ test: { counter: 0 } });
+    
+        expect(() => {
+            store.setState({ test: { counter: 1 } });
+        }).toThrow();
+    });
+});
+
+describe('resetState', () => {
+    it('should reset state', () => {
+        let initialState = { test: { counter: 0 } };
+        let store = createStore(initialState);
+
+        store.setState({
+            type: 'TEST',
+            test: { counter: 27 }
+        });
+        store.resetState({ type: 'RESET_STATE' });
+
+        expect(store.getState()).toEqual(initialState);
+    });
+});
+
+describe('subscribe', () => {
     it('should subscribe', () => {
         let initialState = { test: { counter: 0 } };
         let store = createStore(initialState);
@@ -65,44 +137,49 @@ describe('store', () => {
         store.setState(newState);
     });
 
-    it('should not allow to add new root properties', () => {
-        let initialState = { test: { counter: 0 } };
-        let store = createStore(initialState);
-
-        expect(() => {
-            store.setState({
-                type: 'TEST',
-                newRoot: { counter: 0 }
-            });
-        }).toThrow();
-    });
-
-    it('should reset state', () => {
-        let initialState = { test: { counter: 0 } };
-        let store = createStore(initialState);
-
-        store.setState({
-            type: 'TEST',
-            test: { counter: 27 }
-        });
-        store.resetState();
-
-        expect(store.getState()).toEqual(initialState);
-    });
-
     it('should unsubscribe', () => {
-        let initialState = { test: { counter: 0 } };
-        let store = createStore(initialState);
+        let store = createStore({ test: { counter: 0 } });
         let onChange = jest.fn();
 
         let unsubscribe = store.subscribe(onChange);
         unsubscribe();
 
-        store.setState({
-            type: 'TEST',
-            test: { counter: 27 }
-        });
+        store.setState('TEST', { test: { counter: 27 } });
 
         expect(onChange).not.toBeCalled();
+    });
+
+    it('unsubscribe multiple times shouldn\'t throw exception', () => {
+        let store = createStore({ test: { counter: 0 } });
+
+        let unsubscribe = store.subscribe(() => {});
+
+        unsubscribe();
+        unsubscribe();
+        unsubscribe();
+    });
+
+    it('should not allow subscribe in a listener', () => {
+        let store = createStore({ test: { counter: 0 } });
+
+        store.subscribe(() => {
+            expect(() => {
+                store.subscribe(() => {});
+            }).toThrow();
+        });
+
+        store.setState({ type: 'TEST', test: { counter: 1 } });
+    });
+
+    it('should not allow unsubscribe in a listener', () => {
+        let store = createStore({ test: { counter: 0 } });
+
+        let unsubscribe = store.subscribe(() => {
+            expect(() => {
+                unsubscribe();
+            }).toThrow();
+        });
+
+        store.setState({ type: 'TEST', test: { counter: 1 } });
     });
 });

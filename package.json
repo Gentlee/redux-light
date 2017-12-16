@@ -30,10 +30,6 @@
     "babel-cli": "^6.26.0",
     "babel-plugin-transform-object-rest-spread": "^6.26.0",
     "babel-preset-env": "^1.6.1",
-    "jest": "^21.2.1",
-    "redux": "^3.7.2"
-  },
-  "peerDependencies": {
-    "redux": "^3.7.2"
+    "jest": "^21.2.1"
   }
 }

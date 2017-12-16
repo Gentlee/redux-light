@@ -1,80 +1,87 @@
 'use strict';
 
-import { createStore } from 'redux';
-
-const PRODUCTION = process.env.NODE_ENV === 'production';
-const RESET_STATE_TYPE = '@@redux-light/RESET_STATE';
-
-export default function(initialState) {
-
-    // variables for subscribe method
-    
-    let previousState = null;
-    let currentState = initialState;
-    let changes = null;
-
-    // reducer
-    
-    const reducer = (oldState, stateChanges) => {
-        let baseState = stateChanges.type === RESET_STATE_TYPE ? initialState : oldState;
-        let newState = { ...baseState };
-
-        for (let key in stateChanges) {
-            if (key === 'type') continue;
-            if (!PRODUCTION && !baseState.hasOwnProperty(key)) {
-                throw new Error(`No root property with name '${key}' found in the old state.`);
-            }
-            newState[key] = { ...baseState[key], ...stateChanges[key] };
+let defaultReducer = (baseState, stateChanges) => {
+    let newState = { ...baseState };
+    for (let key in stateChanges) {
+        if (key === 'type') continue;
+        if (!baseState.hasOwnProperty(key)) {
+            throw new Error(`No root property with name '${key}' found in the old state.`);
         }
+        newState[key] = { ...baseState[key], ...stateChanges[key] };
+    }
+    return newState;
+};
 
-        previousState = oldState;
-        currentState = newState;
-        changes = stateChanges;
-
-        return newState;
+export default function(initialState, { reducer = defaultReducer, requireType = true } = {}) {
+    let store = {
+        initialState,
+        reducer,
+        state: initialState,
+        listeners: [],
     };
-    
-    // redux store
 
-    const store = createStore(reducer, initialState);
-    
-    // subscribe
+    let enumeratingListeners = false;
         
-    function subscribe(onStateChanged) {
-        return store.subscribe(() => {
-            onStateChanged(previousState, currentState, changes);
-        });
+    store.subscribe = (listener) => {
+        if (enumeratingListeners) throw new Error('You can\'t subscribe in state listener.');
+
+        store.listeners.push(listener);
+        let subscribed = true;
+
+        return () => {
+            if (enumeratingListeners) throw new Error('You can\'t unsubscribe in state listener.');
+            if (!subscribed) return;
+            
+            let index = store.listeners.indexOf(listener);
+            store.listeners.splice(index, 1);
+            subscribed = false;
+        };
+    }
+    
+    store.setState = (arg1, arg2, arg3) => {
+        let state = getStateFromArgs(arg1, arg2, arg3);
+        setStateImpl(state);
     }
 
-    // setState
+    store.resetState = (arg1, arg2, arg3) => {
+        let state = getStateFromArgs(arg1, arg2, arg3);
+        setStateImpl(state, true);
+    }
+
+    function setStateImpl(stateChanges, reset = false) {
+        if (enumeratingListeners) throw new Error('You can\'t set state in state listener.');
+        if (requireType && !stateChanges.type) throw new Error('Missing \'type\' parameter in state changes.');
+
+        let previousState = store.state;
+        store.state = reducer(reset ? initialState : store.state, stateChanges);
     
-    function setState() {
-        let state;
-        if (typeof arguments[0] === 'string') {
-            let type = arguments[0];
-            if (typeof arguments[1] === 'string') {
-                state = {};
-                state[arguments[1]] = arguments[2];
-            } else {
-                state = arguments[1] || {};
-            }
-            state.type = type;
-        } else {
-            state = arguments[0];
+        enumeratingListeners = true;
+        for (let listener of store.listeners) {
+            listener(previousState, store.state, stateChanges);
         }
-        store.dispatch(state);
+        enumeratingListeners = false;
     }
-    
-    // resetState
 
-    function resetState(newState) {
-        store.dispatch({ ...newState, type: RESET_STATE_TYPE });
+    store.getState = () => store.state;
+
+    store.dispatch = store.setState;
+
+    return store;
+}
+
+function getStateFromArgs(arg1, arg2, arg3) {
+    let state;
+    if (typeof arg1 === 'string') {
+        let type = arg1;
+        if (typeof arg2 === 'string') {
+            state = {};
+            state[arg2] = arg3;
+        } else {
+            state = arg2 || {};
+        }
+        state.type = type;
+    } else {
+        state = arg1;
     }
-    
-    return {
-        ...store,
-        subscribe,
-        setState,
-        resetState
-    };
+    return state;
 }
