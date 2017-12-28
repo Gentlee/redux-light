@@ -1,8 +1,8 @@
 'use strict';
 
-let defaultReducer = (baseState, stateChanges) => {
-    let newState = { ...baseState };
-    for (let key in stateChanges) {
+const reducer = (baseState, stateChanges) => {
+    const newState = { ...baseState };
+    for (let key in stateChanges) { 
         if (key === 'type') continue;
         if (!baseState.hasOwnProperty(key)) {
             throw new Error(`No root property with name '${key}' found in the old state.`);
@@ -12,58 +12,90 @@ let defaultReducer = (baseState, stateChanges) => {
     return newState;
 };
 
-export default function(initialState, { reducer = defaultReducer, requireType = true } = {}) {
-    let store = {
+export default function(initialState, { requireType = true } = {}) {
+    const store = {
         initialState,
-        reducer,
         state: initialState,
-        listeners: [],
+        listeners: []
     };
 
     let enumeratingListeners = false;
+    let nextListeners = null;
+    let nextNotifications = [];
+
+    const getNextListeners = () => {
+        if (nextListeners === null) {
+            nextListeners = store.listeners.slice();
+        }
+        return nextListeners;
+    }
         
     store.subscribe = (listener) => {
-        if (enumeratingListeners) throw new Error('You can\'t subscribe in state listener.');
-
-        store.listeners.push(listener);
+        const listeners = enumeratingListeners ? getNextListeners() : store.listeners;
+        listeners.push(listener);
+        
         let subscribed = true;
 
         return () => {
-            if (enumeratingListeners) throw new Error('You can\'t unsubscribe in state listener.');
             if (!subscribed) return;
+
+            const listeners = enumeratingListeners ? getNextListeners() : store.listeners;
+            const index = listeners.indexOf(listener);
+            listeners.splice(index, 1);
             
-            let index = store.listeners.indexOf(listener);
-            store.listeners.splice(index, 1);
             subscribed = false;
         };
     }
     
     store.setState = (arg1, arg2, arg3) => {
-        let state = getStateFromArgs(arg1, arg2, arg3);
+        const state = getStateFromArgs(arg1, arg2, arg3);
         setStateImpl(state);
     }
 
     store.resetState = (arg1, arg2, arg3) => {
-        let state = getStateFromArgs(arg1, arg2, arg3);
+        const state = getStateFromArgs(arg1, arg2, arg3);
         setStateImpl(state, true);
     }
 
     function setStateImpl(stateChanges, reset = false) {
-        if (enumeratingListeners) throw new Error('You can\'t set state in state listener.');
         if (requireType && !stateChanges.type) throw new Error('Missing \'type\' parameter in state changes.');
 
-        let previousState = store.state;
+        const previousState = store.state;
         store.state = reducer(reset ? initialState : store.state, stateChanges);
     
+        if (enumeratingListeners) {
+            nextNotifications.push([previousState, store.state, stateChanges]);
+            return;
+        }
+
+        notifyListeners(previousState, store.state, stateChanges);
+
+        if (nextNotifications.length !== 0) {
+            for (let i = 0;; i++) {
+                let args = nextNotifications[i];
+                if (args === undefined) break;
+                notifyListeners(args[0], args[1], args[2]);
+            }
+    
+            nextNotifications.length = 0;
+        }
+    }
+
+    function notifyListeners(previousState, state, stateChanges) {
         enumeratingListeners = true;
         for (let listener of store.listeners) {
             listener(previousState, store.state, stateChanges);
         }
         enumeratingListeners = false;
+
+        if (nextListeners) {
+            store.listeners = nextListeners;
+            nextListeners = null;
+        }
     }
 
+    // for compability with redux
     store.getState = () => store.state;
-
     store.dispatch = store.setState;
 
     return store;
@@ -72,7 +104,7 @@ export default function(initialState, { reducer = defaultReducer, requireType = 
 function getStateFromArgs(arg1, arg2, arg3) {
     let state;
     if (typeof arg1 === 'string') {
-        let type = arg1;
+        const type = arg1;
         if (typeof arg2 === 'string') {
             state = {};
             state[arg2] = arg3;

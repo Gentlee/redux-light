@@ -9,22 +9,6 @@ describe('createStore', () => {
 
         expect(store.getState()).toEqual(initialState);
     });
-
-    it('should allow to set custom reducer', () => {
-        let initialState = { test: { counter: 0 } };
-        let reducerFn = jest.fn();
-        let reducer = (oldState, newState) => {
-            reducerFn();
-            return { ...newState };
-        };
-        
-        let store = createStore(initialState, { reducer });
-        let newState = { test1: {} };
-        store.setState('TEST_REDUCER', newState);
-
-        expect(reducerFn).toBeCalled();
-        expect(store.state).toEqual(newState);
-    });
     
     it('should allow to disable type', () => {
         let initialState = { test: { counter: 0 } };
@@ -83,16 +67,48 @@ describe('setState', () => {
         }).toThrow();
     });
     
-    it('should not allow set state in a listener', () => {
+    it('should allow set state in a listener', () => {
         let store = createStore({ test: { counter: 0 } });
+        let parametersBefore = [];
+        let parametersAfter = [];
+        let statesBefore = [];
+        let statesAfter = [];
+        let stateChanged = jest.fn();
 
-        let unsubscribe = store.subscribe(() => {
-            expect(() => {
-                store.setState({ type: 'TEST', test: { counter: 2 } });        
-            }).toThrow();
+        store.subscribe((oldState, state, changes) => {
+            stateChanged('before');
+            parametersBefore.push({ oldState, state, changes });
+            statesBefore.push(store.state);
+            
+            if (store.getState().test.counter === 1) {
+                store.setState({ type: 'TEST', test: { counter: 2 } });
+            }
+
+            stateChanged('after');
+            parametersAfter.push({ oldState, state, changes });
+            statesAfter.push(store.state);
         });
 
         store.setState({ type: 'TEST', test: { counter: 1 } });
+        
+        expect(stateChanged.mock.calls).toEqual([['before'], ['after'], ['before'], ['after']]);
+
+        expect(parametersBefore.length).toBe(2);
+        expect(parametersBefore).toEqual(parametersAfter);
+        expect(parametersBefore[0].oldState.test.counter).toBe(0);
+        expect(parametersBefore[0].state.test.counter).toBe(1);
+        expect(parametersBefore[0].changes.test.counter).toBe(1);
+        expect(parametersBefore[1].oldState.test.counter).toBe(1);
+        expect(parametersBefore[1].state.test.counter).toBe(2);
+        expect(parametersBefore[1].changes.test.counter).toBe(2);
+
+        expect(statesBefore.length).toBe(2);
+        expect(statesBefore[0].test.counter).toBe(1);
+        expect(statesBefore[1].test.counter).toBe(2);
+
+        expect(statesAfter.length).toBe(2);
+        expect(statesAfter[0].test.counter).toBe(2);
+        expect(statesAfter[1].test.counter).toBe(2);
     });
     
     it('should throw exception without type', () => {
@@ -159,27 +175,33 @@ describe('subscribe', () => {
         unsubscribe();
     });
 
-    it('should not allow subscribe in a listener', () => {
+    it('should allow subscribe in a listener', () => {
         let store = createStore({ test: { counter: 0 } });
+        let onChange = jest.fn();
 
         store.subscribe(() => {
-            expect(() => {
-                store.subscribe(() => {});
-            }).toThrow();
+            store.subscribe(() => onChange());
+            onChange();
         });
 
-        store.setState({ type: 'TEST', test: { counter: 1 } });
+        store.setState({ type: 'TEST1', test: { counter: 1 } });
+        store.setState({ type: 'TEST2', test: { counter: 2 } });
+
+        expect(onChange).toHaveBeenCalledTimes(3);
     });
 
-    it('should not allow unsubscribe in a listener', () => {
+    it('should allow unsubscribe in a listener', () => {
         let store = createStore({ test: { counter: 0 } });
+        let onChange = jest.fn();
 
         let unsubscribe = store.subscribe(() => {
-            expect(() => {
-                unsubscribe();
-            }).toThrow();
+            unsubscribe();
+            onChange();
         });
 
-        store.setState({ type: 'TEST', test: { counter: 1 } });
+        store.setState({ type: 'TEST1', test: { counter: 1 } });
+        store.setState({ type: 'TEST2', test: { counter: 2 } });
+
+        expect(onChange).toHaveBeenCalledTimes(1);
     });
 });
